@@ -1,0 +1,21 @@
+# Node modules
+node_modules/
+
+# Build output
+out/
+*.vsix
+
+# IDE settings
+.vscode/.history/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+
+# Environment variables
+.env
+.env.local

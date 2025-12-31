@@ -1,0 +1,321 @@
+{
+  "name": "claude-proxy",
+  "displayName": "Claude Proxy",
+  "description": "Simple proxy for Claude API",
+  "version": "0.0.1",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "claudeProxy.selectHaikuMapping",
+        "title": "Claude Proxy: 选择Haiku映射目标"
+      },
+      {
+        "command": "claudeProxy.selectMainMapping",
+        "title": "Claude Proxy: 选择Main映射目标"
+      }
+    ],
+    "configuration": [
+      {
+        "title": "Claude Proxy",
+        "properties": {
+          "claudeProxy.port": {
+            "type": "number",
+            "default": 4001,
+            "description": "代理服务器监听端口",
+            "order": 1
+          },
+          "claudeProxy.enableJsonLogging": {
+            "type": "boolean",
+            "default": false,
+            "description": "是否将请求和响应保存为JSON文件到~/.claude/proxy/log目录",
+            "order": 2
+          },
+          "claudeProxy.mappings.haiku": {
+            "type": "string",
+            "default": "pass",
+            "description": "Haiku模型映射目标",
+            "order": 3
+          },
+          "claudeProxy.mappings.main": {
+            "type": "string",
+            "default": "pass",
+            "description": "Main模型(Sonnet/Opus)映射目标",
+            "order": 4
+          }
+        }
+      },
+      {
+        "title": "Claude Proxy: Anthropic",
+        "properties": {
+          "claudeProxy.providers.anthropic.enabled": {
+            "type": "boolean",
+            "default": false,
+            "markdownDescription": "启用Anthropic官方API\n\nAPI Base URL: `https://api.anthropic.com`",
+            "order": 10
+          },
+          "claudeProxy.providers.anthropic.apiKey": {
+            "type": "string",
+            "default": "",
+            "description": "Anthropic API密钥",
+            "order": 11
+          },
+          "claudeProxy.providers.anthropic.models": {
+            "type": "array",
+            "default": [],
+            "description": "可用的模型列表",
+            "items": {
+              "type": "string"
+            },
+            "order": 12
+          }
+        }
+      },
+      {
+        "title": "Claude Proxy: GLM (智谱AI)",
+        "properties": {
+          "claudeProxy.providers.glm.enabled": {
+            "type": "boolean",
+            "default": false,
+            "markdownDescription": "启用GLM (智谱AI)\n\nAPI Base URL: `https://open.bigmodel.cn/api/anthropic`",
+            "order": 20
+          },
+          "claudeProxy.providers.glm.apiKey": {
+            "type": "string",
+            "default": "",
+            "description": "GLM API密钥",
+            "order": 21
+          },
+          "claudeProxy.providers.glm.models": {
+            "type": "array",
+            "default": [],
+            "description": "可用的模型列表",
+            "items": {
+              "type": "string"
+            },
+            "order": 22
+          }
+        }
+      },
+      {
+        "title": "Claude Proxy: Kimi (Moonshot)",
+        "properties": {
+          "claudeProxy.providers.kimi.enabled": {
+            "type": "boolean",
+            "default": false,
+            "markdownDescription": "启用Kimi (Moonshot AI)\n\nAPI Base URL: `https://api.moonshot.cn/anthropic`",
+            "order": 30
+          },
+          "claudeProxy.providers.kimi.apiKey": {
+            "type": "string",
+            "default": "",
+            "description": "Kimi API密钥",
+            "order": 31
+          },
+          "claudeProxy.providers.kimi.models": {
+            "type": "array",
+            "default": [],
+            "description": "可用的模型列表",
+            "items": {
+              "type": "string"
+            },
+            "order": 32
+          }
+        }
+      },
+      {
+        "title": "Claude Proxy: MiniMax",
+        "properties": {
+          "claudeProxy.providers.minimax.enabled": {
+            "type": "boolean",
+            "default": false,
+            "markdownDescription": "启用MiniMax\n\nAPI Base URL: `https://api.minimaxi.com/anthropic`",
+            "order": 40
+          },
+          "claudeProxy.providers.minimax.apiKey": {
+            "type": "string",
+            "default": "",
+            "description": "MiniMax API密钥",
+            "order": 41
+          },
+          "claudeProxy.providers.minimax.models": {
+            "type": "array",
+            "default": [],
+            "description": "可用的模型列表",
+            "items": {
+              "type": "string"
+            },
+            "order": 42
+          }
+        }
+      },
+      {
+        "title": "Claude Proxy: DeepSeek",
+        "properties": {
+          "claudeProxy.providers.deepseek.enabled": {
+            "type": "boolean",
+            "default": false,
+            "markdownDescription": "启用DeepSeek\n\nAPI Base URL: `https://api.deepseek.com/anthropic`",
+            "order": 50
+          },
+          "claudeProxy.providers.deepseek.apiKey": {
+            "type": "string",
+            "default": "",
+            "description": "DeepSeek API密钥",
+            "order": 51
+          },
+          "claudeProxy.providers.deepseek.models": {
+            "type": "array",
+            "default": [],
+            "description": "可用的模型列表",
+            "items": {
+              "type": "string"
+            },
+            "order": 52
+          }
+        }
+      },
+      {
+        "title": "Claude Proxy: 自定义Provider",
+        "properties": {
+          "claudeProxy.providers.custom.enabled": {
+            "type": "boolean",
+            "default": false,
+            "description": "启用自定义Provider (支持Anthropic格式的API)",
+            "order": 60
+          },
+          "claudeProxy.providers.custom.apiKey": {
+            "type": "string",
+            "default": "",
+            "description": "自定义Provider API密钥",
+            "order": 61
+          },
+          "claudeProxy.providers.custom.baseUrl": {
+            "type": "string",
+            "default": "https://api.siliconflow.cn",
+            "markdownDescription": "自定义Provider API base URL\n\n示例: 硅基流动 `https://api.siliconflow.cn`",
+            "order": 62
+          },
+          "claudeProxy.providers.custom.models": {
+            "type": "array",
+            "default": [],
+            "description": "可用的模型列表",
+            "items": {
+              "type": "string"
+            },
+            "order": 63
+          }
+        }
+      },
+      {
+        "title": "Claude Proxy: LiteLLM",
+        "properties": {
+          "claudeProxy.providers.litellm.enabled": {
+            "type": "boolean",
+            "default": false,
+            "description": "启用LiteLLM本地代理",
+            "order": 100
+          },
+          "claudeProxy.providers.litellm.binPath": {
+            "type": "string",
+            "default": "~/.local/bin/litellm",
+            "description": "LiteLLM命令行程序路径",
+            "order": 101
+          },
+          "claudeProxy.providers.litellm.port": {
+            "type": "number",
+            "default": 4100,
+            "description": "LiteLLM监听端口",
+            "order": 102
+          },
+          "claudeProxy.providers.litellm.configPath": {
+            "type": "string",
+            "default": "~/.claude/proxy/litellm.yaml",
+            "description": "LiteLLM配置文件路径",
+            "order": 103
+          },
+          "claudeProxy.providers.litellm.apiKey": {
+            "type": "string",
+            "default": "",
+            "description": "LiteLLM API密钥 (可选)",
+            "order": 104
+          },
+          "claudeProxy.providers.litellm.models": {
+            "type": "array",
+            "default": [],
+            "description": "可用的模型列表",
+            "items": {
+              "type": "string"
+            },
+            "order": 105
+          }
+        }
+      },
+      {
+        "title": "Claude Proxy: CLIProxyAPI",
+        "properties": {
+          "claudeProxy.providers.cliproxyapi.enabled": {
+            "type": "boolean",
+            "default": false,
+            "description": "启用CLIProxyAPI本地代理",
+            "order": 110
+          },
+          "claudeProxy.providers.cliproxyapi.binPath": {
+            "type": "string",
+            "default": "~/cliproxyapi/cli-proxy-api",
+            "description": "CLIProxyAPI命令行程序路径",
+            "order": 111
+          },
+          "claudeProxy.providers.cliproxyapi.port": {
+            "type": "number",
+            "default": 4200,
+            "description": "CLIProxyAPI监听端口",
+            "order": 112
+          },
+          "claudeProxy.providers.cliproxyapi.configPath": {
+            "type": "string",
+            "default": "~/.claude/proxy/cliproxyapi.yaml",
+            "description": "CLIProxyAPI配置文件路径",
+            "order": 113
+          },
+          "claudeProxy.providers.cliproxyapi.apiKey": {
+            "type": "string",
+            "default": "",
+            "description": "CLIProxyAPI API密钥 (可选)",
+            "order": 114
+          },
+          "claudeProxy.providers.cliproxyapi.models": {
+            "type": "array",
+            "default": [],
+            "description": "可用的模型列表",
+            "items": {
+              "type": "string"
+            },
+            "order": 115
+          }
+        }
+      }
+    ]
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.80.0",
+    "typescript": "^5.0.0"
+  },
+  "dependencies": {
+    "express": "^4.18.0"
+  }
+}
