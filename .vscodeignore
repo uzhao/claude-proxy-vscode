@@ -1,0 +1,26 @@
+# 源代码文件(编译后的在out目录)
+src/**
+tsconfig.json
+
+# 开发配置
+.vscode/**
+.gitignore
+
+# Node 开发依赖
+node_modules/@types/**
+
+# 文档
+*.md
+!README.md
+
+# Git
+.git/**
+.github/**
+
+# 测试文件
+**/.eslintrc.json
+**/test/**
+**/.vscode-test/**
+
+# 其他
+.DS_Store

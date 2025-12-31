@@ -1,14 +1,29 @@
 {
   "name": "claude-proxy",
   "displayName": "Claude Proxy",
-  "description": "Simple proxy for Claude API",
+  "description": "Simple proxy for Claude API with multiple AI provider support",
   "version": "0.0.1",
+  "publisher": "uzhao",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/uzhao/claude-proxy-vscode.git"
+  },
   "engines": {
     "vscode": "^1.80.0"
   },
   "categories": [
     "Other"
   ],
+  "keywords": [
+    "claude",
+    "ai",
+    "proxy",
+    "anthropic",
+    "glm",
+    "kimi",
+    "deepseek"
+  ],
+  "license": "MIT",
   "activationEvents": [
     "onStartupFinished"
   ],
