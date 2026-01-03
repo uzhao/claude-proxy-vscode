@@ -246,31 +246,36 @@
             "type": "boolean",
             "default": false,
             "description": "启用LiteLLM本地代理",
-            "order": 100
+            "order": 100,
+            "scope": "machine"
           },
           "claudeProxy.providers.litellm.binPath": {
             "type": "string",
             "default": "~/.local/bin/litellm",
             "description": "LiteLLM命令行程序路径",
-            "order": 101
+            "order": 101,
+            "scope": "machine"
           },
           "claudeProxy.providers.litellm.port": {
             "type": "number",
             "default": 4100,
             "description": "LiteLLM监听端口",
-            "order": 102
+            "order": 102,
+            "scope": "machine"
           },
           "claudeProxy.providers.litellm.configPath": {
             "type": "string",
             "default": "~/.claude/proxy/litellm.yaml",
             "description": "LiteLLM配置文件路径",
-            "order": 103
+            "order": 103,
+            "scope": "machine"
           },
           "claudeProxy.providers.litellm.apiKey": {
             "type": "string",
             "default": "",
             "description": "LiteLLM API密钥 (可选)",
-            "order": 104
+            "order": 104,
+            "scope": "machine"
           },
           "claudeProxy.providers.litellm.models": {
             "type": "array",
@@ -279,7 +284,8 @@
             "items": {
               "type": "string"
             },
-            "order": 105
+            "order": 105,
+            "scope": "machine"
           }
         }
       },
@@ -290,31 +296,36 @@
             "type": "boolean",
             "default": false,
             "description": "启用CLIProxyAPI本地代理",
-            "order": 110
+            "order": 110,
+            "scope": "machine"
           },
           "claudeProxy.providers.cliproxyapi.binPath": {
             "type": "string",
             "default": "~/cliproxyapi/cli-proxy-api",
             "description": "CLIProxyAPI命令行程序路径",
-            "order": 111
+            "order": 111,
+            "scope": "machine"
           },
           "claudeProxy.providers.cliproxyapi.port": {
             "type": "number",
             "default": 4200,
             "description": "CLIProxyAPI监听端口",
-            "order": 112
+            "order": 112,
+            "scope": "machine"
           },
           "claudeProxy.providers.cliproxyapi.configPath": {
             "type": "string",
             "default": "~/.claude/proxy/cliproxyapi.yaml",
             "description": "CLIProxyAPI配置文件路径",
-            "order": 113
+            "order": 113,
+            "scope": "machine"
           },
           "claudeProxy.providers.cliproxyapi.apiKey": {
             "type": "string",
             "default": "",
             "description": "CLIProxyAPI API密钥 (可选)",
-            "order": 114
+            "order": 114,
+            "scope": "machine"
           },
           "claudeProxy.providers.cliproxyapi.models": {
             "type": "array",
@@ -323,7 +334,8 @@
             "items": {
               "type": "string"
             },
-            "order": 115
+            "order": 115,
+            "scope": "machine"
           }
         }
       }
