@@ -23,6 +23,54 @@ async function ensureLogDir(): Promise<void> {
   }
 }
 
+// 清理旧的日志文件
+function cleanupOldLogs(): void {
+  const config = vscode.workspace.getConfiguration('claudeProxy');
+
+  // 清理 JSON 日志目录
+  const logDir = getLogDir();
+  if (fs.existsSync(logDir)) {
+    try {
+      const files = fs.readdirSync(logDir);
+      for (const file of files) {
+        const filePath = path.join(logDir, file);
+        try {
+          fs.unlinkSync(filePath);
+          console.log(`已删除日志文件: ${file}`);
+        } catch (e) {
+          console.warn(`删除日志文件失败: ${file}`, e);
+        }
+      }
+    } catch (e) {
+      console.warn('清理JSON日志文件失败:', e);
+    }
+  }
+
+  // 清理 LiteLLM 日志文件
+  const litellmConfigPath = expandPath(config.get<string>('providers.litellm.configPath', '~/.claude/proxy/litellm.yaml'));
+  const litellmLogPath = litellmConfigPath.replace(/\.yaml$/, '.log');
+  if (fs.existsSync(litellmLogPath)) {
+    try {
+      fs.unlinkSync(litellmLogPath);
+      console.log(`已删除 LiteLLM 日志文件: ${litellmLogPath}`);
+    } catch (e) {
+      console.warn(`删除 LiteLLM 日志文件失败: ${litellmLogPath}`, e);
+    }
+  }
+
+  // 清理 CLIProxyAPI 日志文件
+  const cliproxyapiConfigPath = expandPath(config.get<string>('providers.cliproxyapi.configPath', '~/.claude/proxy/cliproxyapi.yaml'));
+  const cliproxyapiLogPath = cliproxyapiConfigPath.replace(/\.yaml$/, '.log');
+  if (fs.existsSync(cliproxyapiLogPath)) {
+    try {
+      fs.unlinkSync(cliproxyapiLogPath);
+      console.log(`已删除 CLIProxyAPI 日志文件: ${cliproxyapiLogPath}`);
+    } catch (e) {
+      console.warn(`删除 CLIProxyAPI 日志文件失败: ${cliproxyapiLogPath}`, e);
+    }
+  }
+}
+
 // 从模型名称提取模型类型 (haiku/main)
 function extractModelType(modelName: string): 'haiku' | 'main' {
   const lower = modelName.toLowerCase();
@@ -275,39 +323,49 @@ async function startLiteLLM(): Promise<void> {
     return;
   }
 
+  // 计算日志文件路径（将.yaml替换为.log）
+  const logPath = configPath.replace(/\.yaml$/, '.log');
+
   console.log(`启动LiteLLM: ${binPath} --config ${configPath} --host 127.0.0.1 --port ${port}`);
+  console.log(`日志文件: ${logPath}`);
 
   try {
+    // 打开日志文件用于写入（追加模式）
+    const logFd = fs.openSync(logPath, 'a');
+
     litellmProcess = spawn(binPath, [
       '--config', configPath,
       '--host', '127.0.0.1',
-      '--port', port.toString()
+      '--port', port.toString(),
+      '--debug'
     ], {
       cwd: path.dirname(configPath),
-      stdio: ['ignore', 'pipe', 'pipe']
-    });
-
-    // 监听输出
-    litellmProcess.stdout?.on('data', (data) => {
-      console.log(`[LiteLLM] ${data.toString().trim()}`);
-    });
-
-    litellmProcess.stderr?.on('data', (data) => {
-      console.error(`[LiteLLM Error] ${data.toString().trim()}`);
+      stdio: ['ignore', logFd, logFd],
+      detached: false
     });
 
     litellmProcess.on('error', (error) => {
       console.error('LiteLLM进程启动失败:', error);
       vscode.window.showErrorMessage(`LiteLLM启动失败: ${error.message}`);
       litellmProcess = null;
+      try {
+        fs.closeSync(logFd);
+      } catch (e) {
+        // 忽略关闭错误
+      }
     });
 
     litellmProcess.on('exit', (code, signal) => {
       console.log(`LiteLLM进程退出: code=${code}, signal=${signal}`);
       litellmProcess = null;
+      try {
+        fs.closeSync(logFd);
+      } catch (e) {
+        // 忽略关闭错误
+      }
     });
 
-    vscode.window.showInformationMessage(`LiteLLM已启动 (端口: ${port})`);
+    vscode.window.showInformationMessage(`LiteLLM已启动 (端口: ${port}, 日志: ${logPath})`);
   } catch (error: any) {
     console.error('启动LiteLLM失败:', error);
     vscode.window.showErrorMessage(`启动LiteLLM失败: ${error.message}`);
@@ -349,38 +407,47 @@ async function startCLIProxyAPI(): Promise<void> {
     return;
   }
 
+  // 计算日志文件路径（将.yaml替换为.log）
+  const logPath = configPath.replace(/\.yaml$/, '.log');
+
   console.log(`启动CLIProxyAPI: ${binPath} --config ${configPath}`);
+  console.log(`日志文件: ${logPath}`);
 
   try {
+    // 打开日志文件用于写入（追加模式）
+    const logFd = fs.openSync(logPath, 'a');
+
     cliproxyapiProcess = spawn(binPath, [
       '--config', configPath
     ], {
       cwd: path.dirname(configPath),
-      stdio: ['ignore', 'pipe', 'pipe'],
-      env: { ...process.env, PORT: port.toString() }
-    });
-
-    // 监听输出
-    cliproxyapiProcess.stdout?.on('data', (data) => {
-      console.log(`[CLIProxyAPI] ${data.toString().trim()}`);
-    });
-
-    cliproxyapiProcess.stderr?.on('data', (data) => {
-      console.error(`[CLIProxyAPI Error] ${data.toString().trim()}`);
+      stdio: ['ignore', logFd, logFd],
+      env: { ...process.env, PORT: port.toString() },
+      detached: false
     });
 
     cliproxyapiProcess.on('error', (error) => {
       console.error('CLIProxyAPI进程启动失败:', error);
       vscode.window.showErrorMessage(`CLIProxyAPI启动失败: ${error.message}`);
       cliproxyapiProcess = null;
+      try {
+        fs.closeSync(logFd);
+      } catch (e) {
+        // 忽略关闭错误
+      }
     });
 
     cliproxyapiProcess.on('exit', (code, signal) => {
       console.log(`CLIProxyAPI进程退出: code=${code}, signal=${signal}`);
       cliproxyapiProcess = null;
+      try {
+        fs.closeSync(logFd);
+      } catch (e) {
+        // 忽略关闭错误
+      }
     });
 
-    vscode.window.showInformationMessage(`CLIProxyAPI已启动 (端口: ${port})`);
+    vscode.window.showInformationMessage(`CLIProxyAPI已启动 (端口: ${port}, 日志: ${logPath})`);
   } catch (error: any) {
     console.error('启动CLIProxyAPI失败:', error);
     vscode.window.showErrorMessage(`启动CLIProxyAPI失败: ${error.message}`);
@@ -494,6 +561,9 @@ function filterLiteLLMChunk(chunk: Uint8Array): Uint8Array {
 
 export async function activate(context: vscode.ExtensionContext) {
   console.log('Claude Proxy 激活中...');
+
+  // 清理旧的日志文件
+  cleanupOldLogs();
 
   // 创建状态栏按钮
   statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
@@ -625,10 +695,23 @@ export async function activate(context: vscode.ExtensionContext) {
         // 收集响应数据用于日志
         const responseChunks: Uint8Array[] = [];
 
-        // 复制响应头
-        res.writeHead(response.status, {
-          'content-type': response.headers.get('content-type') || 'application/json',
-        });
+        // 复制响应头 - 转发所有必要的头部
+        const responseHeaders: any = {};
+        for (const [key, value] of response.headers.entries()) {
+          const lowerKey = key.toLowerCase();
+          // 跳过一些不应该转发的头部
+          if (['connection', 'keep-alive', 'transfer-encoding', 'content-length'].includes(lowerKey)) {
+            continue;
+          }
+          responseHeaders[key] = value;
+        }
+
+        // 确保有 content-type
+        if (!responseHeaders['content-type']) {
+          responseHeaders['content-type'] = 'application/json';
+        }
+
+        res.writeHead(response.status, responseHeaders);
 
         // 流式转发响应并收集数据
         const reader = response.body?.getReader();
