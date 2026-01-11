@@ -10,6 +10,103 @@ let statusBarItem: vscode.StatusBarItem;
 let litellmProcess: ChildProcess | null = null;
 let cliproxyapiProcess: ChildProcess | null = null;
 
+// Claude settings 配置文件路径
+const CLAUDE_GLOBAL_SETTINGS_PATH = path.join(os.homedir(), '.claude', 'settings.json');
+const CLAUDE_GLOBAL_SETTINGS_NO_PROXY_PATH = path.join(os.homedir(), '.claude', 'settings.json.no_proxy');
+
+// 获取当前工作区下的 settings.json 路径
+function getWorkspaceSettingsPath(): string {
+  // 优先使用 VSCode 的工作区路径
+  if (vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders.length > 0) {
+    return path.join(vscode.workspace.workspaceFolders[0].uri.fsPath, '.claude', 'settings.json');
+  }
+  // 回退到当前目录
+  return path.join(process.cwd(), '.claude', 'settings.json');
+}
+
+function getWorkspaceSettingsNoProxyPath(): string {
+  if (vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders.length > 0) {
+    return path.join(vscode.workspace.workspaceFolders[0].uri.fsPath, '.claude', 'settings.json.no_proxy');
+  }
+  return path.join(process.cwd(), '.claude', 'settings.json.no_proxy');
+}
+
+// 读取和解析 settings.json
+function readSettingsFile(filePath: string): any | null {
+  try {
+    if (!fs.existsSync(filePath)) {
+      return null;
+    }
+    const content = fs.readFileSync(filePath, 'utf8');
+    return JSON.parse(content);
+  } catch (e) {
+    console.warn(`读取 settings.json 失败: ${filePath}`, e);
+    return null;
+  }
+}
+
+// 写入 settings.json
+function writeSettingsFile(filePath: string, data: any): boolean {
+  try {
+    // 确保目录存在
+    const dir = path.dirname(filePath);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf8');
+    console.log(`已写入 settings.json: ${filePath}`);
+    return true;
+  } catch (e) {
+    console.warn(`写入 settings.json 失败: ${filePath}`, e);
+    return false;
+  }
+}
+
+/**
+ * 切换到透传模式：保存当前配置到 no_proxy，移除 env 部分
+ */
+function enablePassThroughMode(): void {
+  const settingsFiles = [
+    { settings: CLAUDE_GLOBAL_SETTINGS_PATH, noProxy: CLAUDE_GLOBAL_SETTINGS_NO_PROXY_PATH },
+    { settings: getWorkspaceSettingsPath(), noProxy: getWorkspaceSettingsNoProxyPath() }
+  ];
+
+  for (const { settings, noProxy } of settingsFiles) {
+    const currentSettings = readSettingsFile(settings);
+    if (currentSettings && currentSettings.env) {
+      // 备份完整配置到 no_proxy
+      writeSettingsFile(noProxy, currentSettings);
+
+      // 移除 env 部分
+      const settingsWithoutEnv = { ...currentSettings };
+      delete settingsWithoutEnv.env;
+
+      // 如果移除 env 后为空对象，写入空对象
+      writeSettingsFile(settings, Object.keys(settingsWithoutEnv).length > 0 ? settingsWithoutEnv : {});
+      console.log(`已启用透传模式，移除 env 配置: ${settings}`);
+    }
+  }
+}
+
+/**
+ * 切换到非透传模式：从 no_proxy 恢复完整配置
+ */
+function disablePassThroughMode(): void {
+  const settingsFiles = [
+    { settings: CLAUDE_GLOBAL_SETTINGS_PATH, noProxy: CLAUDE_GLOBAL_SETTINGS_NO_PROXY_PATH },
+    { settings: getWorkspaceSettingsPath(), noProxy: getWorkspaceSettingsNoProxyPath() }
+  ];
+
+  for (const { settings, noProxy } of settingsFiles) {
+    const noProxySettings = readSettingsFile(noProxy);
+    if (noProxySettings && noProxySettings.env) {
+      // 恢复完整配置
+      writeSettingsFile(settings, noProxySettings);
+      console.log(`已恢复非透传模式，恢复 env 配置: ${settings}`);
+    }
+  }
+}
+
 // 获取日志目录路径
 function getLogDir(): string {
   return path.join(os.homedir(), '.claude', 'proxy', 'log');
@@ -985,8 +1082,26 @@ async function selectMapping(modelType: 'haiku' | 'main'): Promise<void> {
 
   if (selected) {
     const targetValue = selected.label.replace(/^\$\(check\)\s+/, '');
+    const previousMapping = config.get<string>(`mappings.${modelType}`, 'pass');
+
     await config.update(`mappings.${modelType}`, targetValue, vscode.ConfigurationTarget.Global);
     vscode.window.showInformationMessage(`${modelType}映射已更新为: ${targetValue}`);
+
+    // 检查是否切换到/从透传模式
+    const isSwitchingToPassThrough = targetValue === 'pass' && previousMapping !== 'pass';
+    const isSwitchingFromPassThrough = targetValue !== 'pass' && previousMapping === 'pass';
+
+    if (isSwitchingToPassThrough) {
+      // 切换到透传模式：移除 env 配置
+      enablePassThroughMode();
+      // 重新加载窗口使配置生效
+      vscode.commands.executeCommand('workbench.action.reloadWindow');
+    } else if (isSwitchingFromPassThrough) {
+      // 切换到非透传模式：恢复 env 配置
+      disablePassThroughMode();
+      // 重新加载窗口使配置生效
+      vscode.commands.executeCommand('workbench.action.reloadWindow');
+    }
 
     // 如果是main模型,更新状态栏
     if (modelType === 'main') {
