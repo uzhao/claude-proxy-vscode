@@ -10,9 +10,19 @@ let statusBarItem: vscode.StatusBarItem;
 let litellmProcess: ChildProcess | null = null;
 let cliproxyapiProcess: ChildProcess | null = null;
 
+// 配置源类型
+type SettingsScope = 'global' | 'workspace';
+
+// 配置文件信息
+interface SettingsInfo {
+  scope: SettingsScope;
+  filePath: string;
+  exists: boolean;
+  hasProxyConfig: boolean;
+}
+
 // Claude settings 配置文件路径
 const CLAUDE_GLOBAL_SETTINGS_PATH = path.join(os.homedir(), '.claude', 'settings.json');
-const CLAUDE_GLOBAL_SETTINGS_NO_PROXY_PATH = path.join(os.homedir(), '.claude', 'settings.json.no_proxy');
 
 // 获取当前工作区下的 settings.json 路径
 function getWorkspaceSettingsPath(): string {
@@ -24,11 +34,42 @@ function getWorkspaceSettingsPath(): string {
   return path.join(process.cwd(), '.claude', 'settings.json');
 }
 
-function getWorkspaceSettingsNoProxyPath(): string {
-  if (vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders.length > 0) {
-    return path.join(vscode.workspace.workspaceFolders[0].uri.fsPath, '.claude', 'settings.json.no_proxy');
+/**
+ * 获取指定作用域的配置文件路径
+ */
+function getSettingsFilePath(scope: SettingsScope): string {
+  if (scope === 'global') {
+    return CLAUDE_GLOBAL_SETTINGS_PATH;
   }
-  return path.join(process.cwd(), '.claude', 'settings.json.no_proxy');
+  return getWorkspaceSettingsPath();
+}
+
+/**
+ * 获取配置文件信息
+ */
+function getSettingsInfo(scope: SettingsScope): SettingsInfo {
+  const filePath = getSettingsFilePath(scope);
+  const exists = fs.existsSync(filePath);
+  let hasProxyConfig = false;
+
+  if (exists) {
+    const settings = readSettingsFile(filePath);
+    hasProxyConfig = !!(settings?.env?.ANTHROPIC_BASE_URL);
+  }
+
+  return { scope, filePath, exists, hasProxyConfig };
+}
+
+/**
+ * 检测当前激活的配置源
+ * 优先级：项目配置 > 全局配置
+ */
+function detectActiveSettingsScope(): SettingsScope {
+  const workspaceInfo = getSettingsInfo('workspace');
+  if (workspaceInfo.exists) {
+    return 'workspace';
+  }
+  return 'global';
 }
 
 // 读取和解析 settings.json
@@ -63,48 +104,54 @@ function writeSettingsFile(filePath: string, data: any): boolean {
 }
 
 /**
- * 切换到透传模式：保存当前配置到 no_proxy，移除 env 部分
+ * 更新代理配置（不使用备份文件）
+ * @param scope 配置作用域
+ * @param enableProxy 是否启用代理（false = 透传）
  */
-function enablePassThroughMode(): void {
-  const settingsFiles = [
-    { settings: CLAUDE_GLOBAL_SETTINGS_PATH, noProxy: CLAUDE_GLOBAL_SETTINGS_NO_PROXY_PATH },
-    { settings: getWorkspaceSettingsPath(), noProxy: getWorkspaceSettingsNoProxyPath() }
-  ];
+function updateProxyConfig(scope: SettingsScope, enableProxy: boolean): boolean {
+  const filePath = getSettingsFilePath(scope);
+  let settings = readSettingsFile(filePath) || {};
 
-  for (const { settings, noProxy } of settingsFiles) {
-    const currentSettings = readSettingsFile(settings);
-    if (currentSettings && currentSettings.env) {
-      // 备份完整配置到 no_proxy
-      writeSettingsFile(noProxy, currentSettings);
-
-      // 移除 env 部分
-      const settingsWithoutEnv = { ...currentSettings };
-      delete settingsWithoutEnv.env;
-
-      // 如果移除 env 后为空对象，写入空对象
-      writeSettingsFile(settings, Object.keys(settingsWithoutEnv).length > 0 ? settingsWithoutEnv : {});
-      console.log(`已启用透传模式，移除 env 配置: ${settings}`);
-    }
+  // 确保 env 对象存在
+  if (!settings.env) {
+    settings.env = {};
   }
+
+  const config = vscode.workspace.getConfiguration('claudeProxy');
+  const port = config.get<number>('port', 4001);
+
+  if (enableProxy) {
+    // 启用代理：设置 ANTHROPIC_BASE_URL
+    settings.env.ANTHROPIC_BASE_URL = `http://127.0.0.1:${port}`;
+    console.log(`已启用代理模式，设置 ANTHROPIC_BASE_URL: ${filePath}`);
+  } else {
+    // 禁用代理：删除 ANTHROPIC_BASE_URL
+    delete settings.env.ANTHROPIC_BASE_URL;
+
+    // 如果 env 为空，删除整个 env
+    if (Object.keys(settings.env).length === 0) {
+      delete settings.env;
+    }
+    console.log(`已启用透传模式，移除 ANTHROPIC_BASE_URL: ${filePath}`);
+  }
+
+  return writeSettingsFile(filePath, settings);
 }
 
 /**
- * 切换到非透传模式：从 no_proxy 恢复完整配置
+ * 设置透传模式（删除当前激活配置中的代理设置）
  */
-function disablePassThroughMode(): void {
-  const settingsFiles = [
-    { settings: CLAUDE_GLOBAL_SETTINGS_PATH, noProxy: CLAUDE_GLOBAL_SETTINGS_NO_PROXY_PATH },
-    { settings: getWorkspaceSettingsPath(), noProxy: getWorkspaceSettingsNoProxyPath() }
-  ];
+function setPassThroughMode(): void {
+  const activeScope = detectActiveSettingsScope();
+  updateProxyConfig(activeScope, false);
+}
 
-  for (const { settings, noProxy } of settingsFiles) {
-    const noProxySettings = readSettingsFile(noProxy);
-    if (noProxySettings && noProxySettings.env) {
-      // 恢复完整配置
-      writeSettingsFile(settings, noProxySettings);
-      console.log(`已恢复非透传模式，恢复 env 配置: ${settings}`);
-    }
-  }
+/**
+ * 设置代理模式（在当前激活配置中设置代理）
+ */
+function setProxyMode(): void {
+  const activeScope = detectActiveSettingsScope();
+  updateProxyConfig(activeScope, true);
 }
 
 // 获取日志目录路径
@@ -656,8 +703,49 @@ function filterLiteLLMChunk(chunk: Uint8Array): Uint8Array {
   return Buffer.from(filteredLines.join('\n'), 'utf8');
 }
 
+/**
+ * 启动/重载时配置检查
+ * 检查当前透传模式状态与配置文件是否一致，不一致则自动同步
+ */
+async function checkConfigurationOnStartup(): Promise<void> {
+  const workspaceInfo = getSettingsInfo('workspace');
+  const globalInfo = getSettingsInfo('global');
+
+  // 两者都不存在时提示
+  if (!workspaceInfo.exists && !globalInfo.exists) {
+    vscode.window.showWarningMessage(
+      '未找到 Claude 配置文件（~/.claude/settings.json 或项目/.claude/settings.json），代理设置无法生效。'
+    );
+    return;
+  }
+
+  // 检测当前激活的配置源和配置状态
+  const activeScope = detectActiveSettingsScope();
+  const activeInfo = getSettingsInfo(activeScope);
+
+  // 获取当前 VSCode 扩展的透传模式配置
+  const config = vscode.workspace.getConfiguration('claudeProxy');
+  const mainMapping = config.get<string>('mappings.main', 'pass');
+  const haikuMapping = config.get<string>('mappings.haiku', 'pass');
+  const isPassThrough = mainMapping === 'pass' && haikuMapping === 'pass';
+
+  // 如果配置状态不一致，自动同步
+  if (isPassThrough && activeInfo.hasProxyConfig) {
+    // 扩展配置是透传，但配置文件中有代理配置，移除它
+    updateProxyConfig(activeScope, false);
+    console.log('检测到透传模式，已移除配置文件中的代理设置');
+  } else if (!isPassThrough && !activeInfo.hasProxyConfig) {
+    // 扩展配置是非透传，但配置文件中无代理配置，添加它
+    updateProxyConfig(activeScope, true);
+    console.log('检测到代理模式，已在配置文件中设置代理');
+  }
+}
+
 export async function activate(context: vscode.ExtensionContext) {
   console.log('Claude Proxy 激活中...');
+
+  // 启动时配置检查
+  await checkConfigurationOnStartup();
 
   // 清理旧的日志文件
   cleanupOldLogs();
@@ -1093,12 +1181,12 @@ async function selectMapping(modelType: 'haiku' | 'main'): Promise<void> {
 
     if (isSwitchingToPassThrough) {
       // 切换到透传模式：移除 env 配置
-      enablePassThroughMode();
+      setPassThroughMode();
       // 重新加载窗口使配置生效
       vscode.commands.executeCommand('workbench.action.reloadWindow');
     } else if (isSwitchingFromPassThrough) {
       // 切换到非透传模式：恢复 env 配置
-      disablePassThroughMode();
+      setProxyMode();
       // 重新加载窗口使配置生效
       vscode.commands.executeCommand('workbench.action.reloadWindow');
     }
