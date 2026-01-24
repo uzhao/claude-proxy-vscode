@@ -726,18 +726,29 @@ async function checkConfigurationOnStartup(): Promise<void> {
   // 获取当前 VSCode 扩展的透传模式配置
   const config = vscode.workspace.getConfiguration('claudeProxy');
   const mainMapping = config.get<string>('mappings.main', 'pass');
-  const haikuMapping = config.get<string>('mappings.haiku', 'pass');
-  const isPassThrough = mainMapping === 'pass' && haikuMapping === 'pass';
+  // const haikuMapping = config.get<string>('mappings.haiku', 'pass');
+
+  // 关键修正：系统级的代理模式仅由 Main 模型决定
+  // 如果 Main 是 pass，则系统处于透传模式（无论 Haiku 如何设置）
+  const isPassThrough = mainMapping === 'pass';
 
   // 如果配置状态不一致，自动同步
-  if (isPassThrough && activeInfo.hasProxyConfig) {
-    // 扩展配置是透传，但配置文件中有代理配置，移除它
-    updateProxyConfig(activeScope, false);
-    console.log('检测到透传模式，已移除配置文件中的代理设置');
+  if (isPassThrough) {
+    // 扩展配置是透传，确保移除所有代理配置
+    // 检查是否有任何配置存在代理设置
+    const workspaceInfo = getSettingsInfo('workspace');
+    const globalInfo = getSettingsInfo('global');
+    const hasAnyProxy = workspaceInfo.hasProxyConfig || globalInfo.hasProxyConfig;
+
+    if (hasAnyProxy) {
+      // 这里的 setPassThroughMode 会清理 workspace 和 global
+      setPassThroughMode();
+      console.log('检测到透传模式(Main=pass)，已强制移除配置文件中的代理设置');
+    }
   } else if (!isPassThrough && !activeInfo.hasProxyConfig) {
     // 扩展配置是非透传，但配置文件中无代理配置，添加它
     updateProxyConfig(activeScope, true);
-    console.log('检测到代理模式，已在配置文件中设置代理');
+    console.log('检测到代理模式(Main!=pass)，已在配置文件中设置代理');
   }
 }
 
@@ -1175,20 +1186,39 @@ async function selectMapping(modelType: 'haiku' | 'main'): Promise<void> {
     await config.update(`mappings.${modelType}`, targetValue, vscode.ConfigurationTarget.Global);
     vscode.window.showInformationMessage(`${modelType}映射已更新为: ${targetValue}`);
 
-    // 检查是否切换到/从透传模式
-    const isSwitchingToPassThrough = targetValue === 'pass' && previousMapping !== 'pass';
-    const isSwitchingFromPassThrough = targetValue !== 'pass' && previousMapping === 'pass';
+    // 计算新的主模型映射状态
+    // 如果当前修改的是 main，则使用新的 targetValue
+    // 如果当前修改的是 haiku，则保持 main 的配置不变
+    const currentMainMapping = config.get<string>('mappings.main', 'pass');
+    const newMainMapping = modelType === 'main' ? targetValue : currentMainMapping;
 
-    if (isSwitchingToPassThrough) {
-      // 切换到透传模式：移除 env 配置
-      setPassThroughMode();
-      // 重新加载窗口使配置生效
-      vscode.commands.executeCommand('workbench.action.reloadWindow');
-    } else if (isSwitchingFromPassThrough) {
-      // 切换到非透传模式：恢复 env 配置
-      setProxyMode();
-      // 重新加载窗口使配置生效
-      vscode.commands.executeCommand('workbench.action.reloadWindow');
+    // 只有当 Main 模型不是 'pass' 时，才启用代理模式
+    // 如果 Main 是 'pass'，强制使用透传模式（忽略 Haiku 的设置）
+    const shouldEnableProxy = newMainMapping !== 'pass';
+
+    if (!shouldEnableProxy) {
+      // 目标是透传模式 (Main == pass)
+      // 检查任何作用域是否存在代理配置
+      const workspaceInfo = getSettingsInfo('workspace');
+      const globalInfo = getSettingsInfo('global');
+      const anyHasProxy = workspaceInfo.hasProxyConfig || globalInfo.hasProxyConfig;
+
+      if (anyHasProxy) {
+         console.log('Main模型为透传，强制切换到系统透传模式');
+         setPassThroughMode();
+         vscode.commands.executeCommand('workbench.action.reloadWindow');
+      }
+    } else {
+      // 目标是代理模式 (Main != pass)
+      // 如果当前激活的作用域没有配置代理，则添加
+      const activeScope = detectActiveSettingsScope();
+      const activeInfo = getSettingsInfo(activeScope);
+
+      if (!activeInfo.hasProxyConfig) {
+         console.log('Main模型需要映射，强制切换到系统代理模式');
+         setProxyMode();
+         vscode.commands.executeCommand('workbench.action.reloadWindow');
+      }
     }
 
     // 如果是main模型,更新状态栏

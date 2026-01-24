@@ -2,7 +2,7 @@
   "name": "claude-proxy",
   "displayName": "Claude Proxy",
   "description": "Simple proxy for Claude API with multiple AI provider support",
-  "version": "0.0.5",
+  "version": "0.0.6",
   "publisher": "uzhao",
   "homepage": "https://github.com/uzhao/claude-proxy-vscode#readme",
   "bugs": {
