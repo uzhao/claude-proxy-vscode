@@ -139,11 +139,20 @@ function updateProxyConfig(scope: SettingsScope, enableProxy: boolean): boolean 
 }
 
 /**
- * 设置透传模式（删除当前激活配置中的代理设置）
+ * 设置透传模式（删除全局和工作区配置中的代理设置）
  */
 function setPassThroughMode(): void {
-  const activeScope = detectActiveSettingsScope();
-  updateProxyConfig(activeScope, false);
+  // 清理全局配置
+  const globalInfo = getSettingsInfo('global');
+  if (globalInfo.exists) {
+    updateProxyConfig('global', false);
+  }
+
+  // 清理工作区配置
+  const workspaceInfo = getSettingsInfo('workspace');
+  if (workspaceInfo.exists) {
+    updateProxyConfig('workspace', false);
+  }
 }
 
 /**
