@@ -2,7 +2,7 @@
   "name": "claude-proxy",
   "displayName": "Claude Proxy",
   "description": "Simple proxy for Claude API with multiple AI provider support",
-  "version": "0.0.7",
+  "version": "0.0.8",
   "publisher": "uzhao",
   "homepage": "https://github.com/uzhao/claude-proxy-vscode#readme",
   "bugs": {
@@ -55,25 +55,29 @@
             "type": "number",
             "default": 4001,
             "description": "代理服务器监听端口",
-            "order": 1
+            "order": 1,
+            "scope": "machine"
           },
           "claudeProxy.enableJsonLogging": {
             "type": "boolean",
             "default": false,
             "description": "是否将请求和响应保存为JSON文件到~/.claude/proxy/log目录",
-            "order": 2
+            "order": 2,
+            "scope": "machine"
           },
           "claudeProxy.mappings.haiku": {
             "type": "string",
             "default": "pass",
             "description": "Haiku模型映射目标",
-            "order": 3
+            "order": 3,
+            "scope": "machine"
           },
           "claudeProxy.mappings.main": {
             "type": "string",
             "default": "pass",
             "description": "Main模型(Sonnet/Opus)映射目标",
-            "order": 4
+            "order": 4,
+            "scope": "machine"
           }
         }
       },
@@ -84,13 +88,15 @@
             "type": "boolean",
             "default": false,
             "markdownDescription": "启用Anthropic官方API\n\nAPI Base URL: `https://api.anthropic.com`",
-            "order": 10
+            "order": 10,
+            "scope": "machine"
           },
           "claudeProxy.providers.anthropic.apiKey": {
             "type": "string",
             "default": "",
             "description": "Anthropic API密钥",
-            "order": 11
+            "order": 11,
+            "scope": "machine"
           },
           "claudeProxy.providers.anthropic.models": {
             "type": "array",
@@ -99,7 +105,8 @@
             "items": {
               "type": "string"
             },
-            "order": 12
+            "order": 12,
+            "scope": "machine"
           }
         }
       },
@@ -110,13 +117,15 @@
             "type": "boolean",
             "default": false,
             "markdownDescription": "启用GLM (智谱AI)\n\nAPI Base URL: `https://open.bigmodel.cn/api/anthropic`",
-            "order": 20
+            "order": 20,
+            "scope": "machine"
           },
           "claudeProxy.providers.glm.apiKey": {
             "type": "string",
             "default": "",
             "description": "GLM API密钥",
-            "order": 21
+            "order": 21,
+            "scope": "machine"
           },
           "claudeProxy.providers.glm.models": {
             "type": "array",
@@ -125,7 +134,8 @@
             "items": {
               "type": "string"
             },
-            "order": 22
+            "order": 22,
+            "scope": "machine"
           }
         }
       },
@@ -136,13 +146,15 @@
             "type": "boolean",
             "default": false,
             "markdownDescription": "启用Kimi (Moonshot AI)\n\nAPI Base URL: `https://api.moonshot.cn/anthropic`",
-            "order": 30
+            "order": 30,
+            "scope": "machine"
           },
           "claudeProxy.providers.kimi.apiKey": {
             "type": "string",
             "default": "",
             "description": "Kimi API密钥",
-            "order": 31
+            "order": 31,
+            "scope": "machine"
           },
           "claudeProxy.providers.kimi.models": {
             "type": "array",
@@ -151,7 +163,8 @@
             "items": {
               "type": "string"
             },
-            "order": 32
+            "order": 32,
+            "scope": "machine"
           }
         }
       },
@@ -162,13 +175,15 @@
             "type": "boolean",
             "default": false,
             "markdownDescription": "启用MiniMax\n\nAPI Base URL: `https://api.minimaxi.com/anthropic`",
-            "order": 40
+            "order": 40,
+            "scope": "machine"
           },
           "claudeProxy.providers.minimax.apiKey": {
             "type": "string",
             "default": "",
             "description": "MiniMax API密钥",
-            "order": 41
+            "order": 41,
+            "scope": "machine"
           },
           "claudeProxy.providers.minimax.models": {
             "type": "array",
@@ -177,7 +192,8 @@
             "items": {
               "type": "string"
             },
-            "order": 42
+            "order": 42,
+            "scope": "machine"
           }
         }
       },
@@ -188,13 +204,15 @@
             "type": "boolean",
             "default": false,
             "markdownDescription": "启用DeepSeek\n\nAPI Base URL: `https://api.deepseek.com/anthropic`",
-            "order": 50
+            "order": 50,
+            "scope": "machine"
           },
           "claudeProxy.providers.deepseek.apiKey": {
             "type": "string",
             "default": "",
             "description": "DeepSeek API密钥",
-            "order": 51
+            "order": 51,
+            "scope": "machine"
           },
           "claudeProxy.providers.deepseek.models": {
             "type": "array",
@@ -203,7 +221,8 @@
             "items": {
               "type": "string"
             },
-            "order": 52
+            "order": 52,
+            "scope": "machine"
           }
         }
       },
@@ -214,19 +233,22 @@
             "type": "boolean",
             "default": false,
             "description": "启用自定义Provider (支持Anthropic格式的API)",
-            "order": 60
+            "order": 60,
+            "scope": "machine"
           },
           "claudeProxy.providers.custom.apiKey": {
             "type": "string",
             "default": "",
             "description": "自定义Provider API密钥",
-            "order": 61
+            "order": 61,
+            "scope": "machine"
           },
           "claudeProxy.providers.custom.baseUrl": {
             "type": "string",
             "default": "https://api.siliconflow.cn",
             "markdownDescription": "自定义Provider API base URL\n\n示例: 硅基流动 `https://api.siliconflow.cn`",
-            "order": 62
+            "order": 62,
+            "scope": "machine"
           },
           "claudeProxy.providers.custom.models": {
             "type": "array",
@@ -235,7 +257,8 @@
             "items": {
               "type": "string"
             },
-            "order": 63
+            "order": 63,
+            "scope": "machine"
           }
         }
       },
