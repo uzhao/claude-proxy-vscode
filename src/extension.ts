@@ -9,16 +9,18 @@ let server: http.Server | null = null;
 let statusBarItem: vscode.StatusBarItem;
 let litellmProcess: ChildProcess | null = null;
 let cliproxyapiProcess: ChildProcess | null = null;
+let currentProxyPort = 4001;
 
-// 配置源类型
-type SettingsScope = 'global' | 'workspace';
+function randomPort(): number {
+  return Math.floor(Math.random() * (65535 - 1024 + 1)) + 1024;
+}
 
 // 配置文件信息
 interface SettingsInfo {
-  scope: SettingsScope;
   filePath: string;
   exists: boolean;
   hasProxyConfig: boolean;
+  proxyBaseUrl?: string;
 }
 
 // Claude settings 配置文件路径
@@ -26,50 +28,57 @@ const CLAUDE_GLOBAL_SETTINGS_PATH = path.join(os.homedir(), '.claude', 'settings
 
 // 获取当前工作区下的 settings.json 路径
 function getWorkspaceSettingsPath(): string {
-  // 优先使用 VSCode 的工作区路径
   if (vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders.length > 0) {
     return path.join(vscode.workspace.workspaceFolders[0].uri.fsPath, '.claude', 'settings.json');
   }
-  // 回退到当前目录
   return path.join(process.cwd(), '.claude', 'settings.json');
 }
 
 /**
- * 获取指定作用域的配置文件路径
+ * 获取项目级配置文件路径
  */
-function getSettingsFilePath(scope: SettingsScope): string {
-  if (scope === 'global') {
-    return CLAUDE_GLOBAL_SETTINGS_PATH;
-  }
+function getSettingsFilePath(): string {
   return getWorkspaceSettingsPath();
 }
 
 /**
- * 获取配置文件信息
+ * 获取项目级配置文件信息
  */
-function getSettingsInfo(scope: SettingsScope): SettingsInfo {
-  const filePath = getSettingsFilePath(scope);
+function getSettingsInfo(): SettingsInfo {
+  const filePath = getSettingsFilePath();
   const exists = fs.existsSync(filePath);
   let hasProxyConfig = false;
+  let proxyBaseUrl: string | undefined;
 
   if (exists) {
     const settings = readSettingsFile(filePath);
-    hasProxyConfig = !!(settings?.env?.ANTHROPIC_BASE_URL);
+    proxyBaseUrl = settings?.env?.ANTHROPIC_BASE_URL;
+    hasProxyConfig = !!proxyBaseUrl;
   }
 
-  return { scope, filePath, exists, hasProxyConfig };
+  return { filePath, exists, hasProxyConfig, proxyBaseUrl };
 }
 
 /**
- * 检测当前激活的配置源
- * 优先级：项目配置 > 全局配置
+ * 清理全局配置中的代理设置（全局始终不设代理）
  */
-function detectActiveSettingsScope(): SettingsScope {
-  const workspaceInfo = getSettingsInfo('workspace');
-  if (workspaceInfo.exists) {
-    return 'workspace';
+function clearGlobalProxyConfigIfExists(): void {
+  if (!fs.existsSync(CLAUDE_GLOBAL_SETTINGS_PATH)) {
+    return;
   }
-  return 'global';
+
+  const settings = readSettingsFile(CLAUDE_GLOBAL_SETTINGS_PATH);
+  if (!settings?.env?.ANTHROPIC_BASE_URL) {
+    return;
+  }
+
+  delete settings.env.ANTHROPIC_BASE_URL;
+  if (Object.keys(settings.env).length === 0) {
+    delete settings.env;
+  }
+
+  writeSettingsFile(CLAUDE_GLOBAL_SETTINGS_PATH, settings);
+  console.log('Cleared global ANTHROPIC_BASE_URL');
 }
 
 // 读取和解析 settings.json
@@ -104,31 +113,23 @@ function writeSettingsFile(filePath: string, data: any): boolean {
 }
 
 /**
- * 更新代理配置（不使用备份文件）
- * @param scope 配置作用域
+ * 更新项目级代理配置（不使用备份文件）
  * @param enableProxy 是否启用代理（false = 透传）
  */
-function updateProxyConfig(scope: SettingsScope, enableProxy: boolean): boolean {
-  const filePath = getSettingsFilePath(scope);
+function updateProxyConfig(enableProxy: boolean): boolean {
+  const filePath = getSettingsFilePath();
   let settings = readSettingsFile(filePath) || {};
 
-  // 确保 env 对象存在
   if (!settings.env) {
     settings.env = {};
   }
 
-  const config = vscode.workspace.getConfiguration('claudeProxy');
-  const port = config.get<number>('port', 4001);
-
   if (enableProxy) {
-    // 启用代理：设置 ANTHROPIC_BASE_URL
-    settings.env.ANTHROPIC_BASE_URL = `http://127.0.0.1:${port}`;
+    settings.env.ANTHROPIC_BASE_URL = `http://127.0.0.1:${currentProxyPort}`;
     console.log(`已启用代理模式，设置 ANTHROPIC_BASE_URL: ${filePath}`);
   } else {
-    // 禁用代理：删除 ANTHROPIC_BASE_URL
     delete settings.env.ANTHROPIC_BASE_URL;
 
-    // 如果 env 为空，删除整个 env
     if (Object.keys(settings.env).length === 0) {
       delete settings.env;
     }
@@ -139,28 +140,23 @@ function updateProxyConfig(scope: SettingsScope, enableProxy: boolean): boolean 
 }
 
 /**
- * 设置透传模式（删除全局和工作区配置中的代理设置）
+ * 设置透传模式（全局不设代理，清理项目配置中的代理设置）
  */
 function setPassThroughMode(): void {
-  // 清理全局配置
-  const globalInfo = getSettingsInfo('global');
-  if (globalInfo.exists) {
-    updateProxyConfig('global', false);
-  }
+  clearGlobalProxyConfigIfExists();
 
-  // 清理工作区配置
-  const workspaceInfo = getSettingsInfo('workspace');
+  const workspaceInfo = getSettingsInfo();
   if (workspaceInfo.exists) {
-    updateProxyConfig('workspace', false);
+    updateProxyConfig(false);
   }
 }
 
 /**
- * 设置代理模式（在当前激活配置中设置代理）
+ * 设置代理模式（始终写入项目配置，必要时自动创建）
  */
 function setProxyMode(): void {
-  const activeScope = detectActiveSettingsScope();
-  updateProxyConfig(activeScope, true);
+  clearGlobalProxyConfigIfExists();
+  updateProxyConfig(true);
 }
 
 // 获取日志目录路径
@@ -717,47 +713,26 @@ function filterLiteLLMChunk(chunk: Uint8Array): Uint8Array {
  * 检查当前透传模式状态与配置文件是否一致，不一致则自动同步
  */
 async function checkConfigurationOnStartup(): Promise<void> {
-  const workspaceInfo = getSettingsInfo('workspace');
-  const globalInfo = getSettingsInfo('global');
+  clearGlobalProxyConfigIfExists();
 
-  // 两者都不存在时提示
-  if (!workspaceInfo.exists && !globalInfo.exists) {
-    vscode.window.showWarningMessage(
-      '未找到 Claude 配置文件（~/.claude/settings.json 或项目/.claude/settings.json），代理设置无法生效。'
-    );
+  const workspaceInfo = getSettingsInfo();
+
+  const config = vscode.workspace.getConfiguration('claudeProxy');
+  const mainMapping = config.get<string>('mappings.main', 'pass');
+  const isPassThrough = mainMapping === 'pass';
+  const expectedProxyBaseUrl = `http://127.0.0.1:${currentProxyPort}`;
+
+  if (isPassThrough) {
+    if (workspaceInfo.hasProxyConfig) {
+      setPassThroughMode();
+      console.log('检测到透传模式(Main=pass)，已强制移除项目配置中的代理设置');
+    }
     return;
   }
 
-  // 检测当前激活的配置源和配置状态
-  const activeScope = detectActiveSettingsScope();
-  const activeInfo = getSettingsInfo(activeScope);
-
-  // 获取当前 VSCode 扩展的透传模式配置
-  const config = vscode.workspace.getConfiguration('claudeProxy');
-  const mainMapping = config.get<string>('mappings.main', 'pass');
-  // const haikuMapping = config.get<string>('mappings.haiku', 'pass');
-
-  // 关键修正：系统级的代理模式仅由 Main 模型决定
-  // 如果 Main 是 pass，则系统处于透传模式（无论 Haiku 如何设置）
-  const isPassThrough = mainMapping === 'pass';
-
-  // 如果配置状态不一致，自动同步
-  if (isPassThrough) {
-    // 扩展配置是透传，确保移除所有代理配置
-    // 检查是否有任何配置存在代理设置
-    const workspaceInfo = getSettingsInfo('workspace');
-    const globalInfo = getSettingsInfo('global');
-    const hasAnyProxy = workspaceInfo.hasProxyConfig || globalInfo.hasProxyConfig;
-
-    if (hasAnyProxy) {
-      // 这里的 setPassThroughMode 会清理 workspace 和 global
-      setPassThroughMode();
-      console.log('检测到透传模式(Main=pass)，已强制移除配置文件中的代理设置');
-    }
-  } else if (!isPassThrough && !activeInfo.hasProxyConfig) {
-    // 扩展配置是非透传，但配置文件中无代理配置，添加它
-    updateProxyConfig(activeScope, true);
-    console.log('检测到代理模式(Main!=pass)，已在配置文件中设置代理');
+  if (!workspaceInfo.hasProxyConfig || workspaceInfo.proxyBaseUrl !== expectedProxyBaseUrl) {
+    setProxyMode();
+    console.log('检测到代理模式(Main!=pass)，已在项目配置文件中同步当前代理端口');
   }
 }
 
@@ -1022,26 +997,35 @@ export async function activate(context: vscode.ExtensionContext) {
     });
   });
 
-  // 从配置读取端口
-  const config = vscode.workspace.getConfiguration('claudeProxy');
-  const port = config.get<number>('port', 4001);
+  // 启动服务器（随机端口，冲突自动漂移）
+  let listenRetries = 0;
+  const maxListenRetries = 10;
 
-  // 启动服务器
-  server.listen(port, '127.0.0.1', () => {
-    console.log(`✓ 代理服务器启动在 http://127.0.0.1:${port}`);
-    vscode.window.showInformationMessage(`Claude Proxy 已启动 (端口: ${port})`);
+  const tryListen = () => {
+    currentProxyPort = randomPort();
+    server!.listen(currentProxyPort, '127.0.0.1');
+  };
+
+  server.on('listening', async () => {
+    console.log(`✓ 代理服务器启动在 http://127.0.0.1:${currentProxyPort}`);
+    await checkConfigurationOnStartup();
+    vscode.window.showInformationMessage(`Claude Proxy 已启动 (端口: ${currentProxyPort})`);
   });
 
-  // 监听端口占用错误
   server.on('error', (error: any) => {
-    if (error.code === 'EADDRINUSE') {
-      console.log(`端口 ${port} 已被占用,跳过启动代理服务器`);
-      server = null;
-    } else {
-      console.error('服务器错误:', error);
-      vscode.window.showErrorMessage(`代理服务器启动失败: ${error.message}`);
+    if (error.code === 'EADDRINUSE' && listenRetries < maxListenRetries) {
+      listenRetries++;
+      console.log(`端口 ${currentProxyPort} 已被占用,切换随机端口重试 (${listenRetries}/${maxListenRetries})`);
+      tryListen();
+      return;
     }
+
+    console.error('服务器错误:', error);
+    vscode.window.showErrorMessage(`代理服务器启动失败: ${error.message}`);
+    server = null;
   });
+
+  tryListen();
 
   // 启动LiteLLM进程
   await startLiteLLM();
@@ -1192,7 +1176,7 @@ async function selectMapping(modelType: 'haiku' | 'main'): Promise<void> {
     const targetValue = selected.label.replace(/^\$\(check\)\s+/, '');
     const previousMapping = config.get<string>(`mappings.${modelType}`, 'pass');
 
-    await config.update(`mappings.${modelType}`, targetValue, vscode.ConfigurationTarget.Global);
+    await config.update(`mappings.${modelType}`, targetValue, vscode.ConfigurationTarget.Workspace);
     vscode.window.showInformationMessage(`${modelType}映射已更新为: ${targetValue}`);
 
     // 计算新的主模型映射状态
@@ -1207,10 +1191,10 @@ async function selectMapping(modelType: 'haiku' | 'main'): Promise<void> {
 
     if (!shouldEnableProxy) {
       // 目标是透传模式 (Main == pass)
-      // 检查任何作用域是否存在代理配置
-      const workspaceInfo = getSettingsInfo('workspace');
-      const globalInfo = getSettingsInfo('global');
-      const anyHasProxy = workspaceInfo.hasProxyConfig || globalInfo.hasProxyConfig;
+      const workspaceInfo = getSettingsInfo();
+      const globalSettings = readSettingsFile(CLAUDE_GLOBAL_SETTINGS_PATH);
+      const globalHasProxy = !!(globalSettings?.env?.ANTHROPIC_BASE_URL);
+      const anyHasProxy = workspaceInfo.hasProxyConfig || globalHasProxy;
 
       if (anyHasProxy) {
          console.log('Main模型为透传，强制切换到系统透传模式');
@@ -1219,11 +1203,9 @@ async function selectMapping(modelType: 'haiku' | 'main'): Promise<void> {
       }
     } else {
       // 目标是代理模式 (Main != pass)
-      // 如果当前激活的作用域没有配置代理，则添加
-      const activeScope = detectActiveSettingsScope();
-      const activeInfo = getSettingsInfo(activeScope);
+      const workspaceInfo = getSettingsInfo();
 
-      if (!activeInfo.hasProxyConfig) {
+      if (!workspaceInfo.hasProxyConfig) {
          console.log('Main模型需要映射，强制切换到系统代理模式');
          setProxyMode();
          vscode.commands.executeCommand('workbench.action.reloadWindow');
