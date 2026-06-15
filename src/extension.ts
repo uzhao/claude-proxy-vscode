@@ -11,10 +11,6 @@ let litellmProcess: ChildProcess | null = null;
 let cliproxyapiProcess: ChildProcess | null = null;
 let currentProxyPort = 4001;
 
-function randomPort(): number {
-  return Math.floor(Math.random() * (65535 - 1024 + 1)) + 1024;
-}
-
 // 配置文件信息
 interface SettingsInfo {
   filePath: string;
@@ -997,12 +993,12 @@ export async function activate(context: vscode.ExtensionContext) {
     });
   });
 
-  // 启动服务器（随机端口，冲突自动漂移）
+  // 启动服务器(固定起始端口 claudeProxy.port,默认 4001;被占则递增找可用)
   let listenRetries = 0;
-  const maxListenRetries = 10;
+  const maxListenRetries = 20;
+  currentProxyPort = vscode.workspace.getConfiguration('claudeProxy').get<number>('port', 4001);
 
   const tryListen = () => {
-    currentProxyPort = randomPort();
     server!.listen(currentProxyPort, '127.0.0.1');
   };
 
@@ -1015,7 +1011,8 @@ export async function activate(context: vscode.ExtensionContext) {
   server.on('error', (error: any) => {
     if (error.code === 'EADDRINUSE' && listenRetries < maxListenRetries) {
       listenRetries++;
-      console.log(`端口 ${currentProxyPort} 已被占用,切换随机端口重试 (${listenRetries}/${maxListenRetries})`);
+      currentProxyPort++;
+      console.log(`端口被占用,递增重试 ${currentProxyPort} (${listenRetries}/${maxListenRetries})`);
       tryListen();
       return;
     }
